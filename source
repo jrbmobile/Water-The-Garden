@@ -162,6 +162,7 @@ def sendWaterValve(evt) {
                 if (settings.useDarkSkyAPI) {
                     darkSkyCheck()
                     } else {
+    				send("Watering Garden")
                     turnOnValve()
                 }			
             } else {
@@ -187,13 +188,13 @@ def darkSkyCheck() {
             }
             log.debug "precipitation probability in ${it+1} hour(s): ${precipProb}%"
 	})
-    log.debug "Greatest precipitation probability: ${greatestProb}%, limit ${darkSkyPercent.toBigDecimal()}"
+    log.debug "Dark Sky predicts precipitation probability: ${greatestProb}%, limit ${darkSkyPercent.toBigDecimal()}"
     if (greatestProb < darkSkyPercent.toBigDecimal()) {
-        send("Less than ${greatestProb}% chance of rain in the next ${settings.darkSkyTime} hour(s). Watering Garden.")
+        send("Dark Sky predicts less than ${greatestProb}% chance of rain in the next ${settings.darkSkyTime} hour(s).")
         turnOnSwitch()
         }
         else {
-        send("Greater than ${greatestProb}% chance of rain in the next ${settings.darkSkyTime} hour(s). Not watering Garden.")
+        send("Dark Sky predicts greater than ${greatestProb}% chance of rain in the next ${settings.darkSkyTime} hour(s). Not watering Garden.")
         }
      } else {
          log.debug "HttpGet Response data unsuccesful."
