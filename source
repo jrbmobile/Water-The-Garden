@@ -1,7 +1,8 @@
 /**
- *  Outlet, switch or valve controller, reads humidity and turns on a switch or opens a valve to water your garden. Includes Dark Sky API
+ *  Outlet and switch sprinkler valve controller, reads PlantLink humidity and turns on a switch or opens a valve to water your garden. Includes Dark Sky API
  *  to check if rain is coming and will override the watering cycle if desired. Executes on sensor events, which PlantLink reports every 15 minutes. If a watering
- *  cycle is running for a period longer than the reporting period, new events are ignored until the first cycle is complete. 
+ *  cycle is running for a period longer than the reporting period, new events are ignored until the first cycle is complete. If an event is intercepted (failsafe) and the
+ *  command is to turn off the valve as moisture is above selected value, pending events are cancelled and the valve is turned off immediately.
  *
  *  Copyright 2016 jrb
  *
@@ -205,7 +206,7 @@ def turnOnSwitch() {
 	def switchAttr = selectSwitch.currentValue("switch") 
     log.debug "turnOn: Switch state: ${switchAttr}"
     selectSwitch.on()
-    send("Watering Garden")
+    send("Watering Garden Turning On Switch(s)")
     unsubscribe()  // unsubscribe from future PlantLink events to not trigger another cycle if wait time is longer than event reporting time
     runIn(60 * settings.waterDuration, turnOffSwitch)
     sendEvent(linkText:app.label, name:"turnOn", value:"TurnOn", descriptionText:"TurnOn", eventType:"SOLUTION_EVENT", displayed: true)
@@ -215,7 +216,7 @@ def turnOffSwitch() {
     log.debug "Turning off switch"
    	selectSwitch.off()
    	selectSwitch.off()  // just in case
-    send("Watering Garden Complete")
+    send("Watering Garden Complete, Turning Off Switch(s)")
     unschedule()
     subscribe(sensors, "humidity", humidityHandler) // resubscribe to PlantLink humidity event
     subscribe(sensors, "voltage", resistivityHandler) // resubscribe to PlantLink resistivity event
@@ -227,7 +228,7 @@ def turnOnValve() {
 	def switchAttr = selectValve.currentValue("contact") 
     log.debug "turnOn: Valve state: ${valveAttr}"
     selectValve.on()
-    send("Watering Garden")
+    send("Watering Garden Turning On Valve(s)")
     unsubscribe()  // unsubscribe from future PlantLink events to not trigger another cycle if wait time is longer than event reporting time
     runIn(60 * settings.waterDuration, turnOffValve)
     sendEvent(linkText:app.label, name:"turnOn", value:"TurnOn", descriptionText:"TurnOn", eventType:"SOLUTION_EVENT", displayed: true)
@@ -237,7 +238,7 @@ def turnOffValve() {
     log.debug "Turning off valve"
    	selectValve.off()
    	selectValve.off()  // just in case
-    send("Watering Garden Complete")
+    send("Watering Garden Complete, Turning Off Valve(s)")
     unschedule()
     subscribe(sensors, "humidity", humidityHandler) // resubscribe to PlantLink humidity event
     subscribe(sensors, "voltage", resistivityHandler) // resubscribe to PlantLink resistivity event
