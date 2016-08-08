@@ -1,0 +1,262 @@
+/**
+ *  Outlet and switch sprinkler valve controller, reads PlantLink humidity and turns on a switch to open the valve and water your garden. SmartApp includes Dark Sky API
+ *  to check if rain is coming and will override the watering cycle if desired. SmartApp executes on sensor events, which PlantLink reports every 15 minutes. If a watering
+ *  cycle is running for a period longer than the reporting period, new events are ignored until the first cycle is complete. If an event is intercepted (failsafe) and the
+ *  command is to turn off the valve as moisture is above selected value, pending events are cancelled and the valve is turned off immediately.
+ *
+ *  Copyright 2016 jrb
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
+ *  in compliance with the License. You may obtain a copy of the License at:
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software distributed under the License is distributed
+ *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
+ *  for the specific language governing permissions and limitations under the License.
+ * 
+ *  Use at your own risk, this is a beta release, I am not responsible for flooding your garden, killing your plants from lack or water, or any other "act of God". Please see
+ *  https://en.wikipedia.org/wiki/Act_of_God
+ *
+ *	Version: 0.1 - Initial Version
+ */
+definition(
+    name: "Water The Garden",
+    namespace: "jrb",
+    author: "jrbmobile",
+    description: "Monitors any sensors that report humidity. The app turns on a switch or outlet to open a sprinkler valve. Checks the Dark Sky API if desired to see if rain is coming soon in case you wish to override.",
+    category: "Green Living",
+    iconX2Url: "http://cdn.device-icons.smartthings.com/Outdoor/outdoor5-icn@2x.png",
+    iconUrl: "http://cdn.device-icons.smartthings.com/Outdoor/outdoor5-icn.png")
+
+preferences {
+    page name:"pageInfo"
+}
+
+def pageInfo() {
+	return dynamicPage(name: "pageInfo", install: true, uninstall: true) {
+		section("About") {
+		paragraph "Monitors any sensors that report humidity. The app turns on a switch or outlet to open a sprinkler valve or an actual valve. Checks the Dark Sky API if desired to see if rain is coming soon in case you wish to override."
+		}
+        section("Select Moisture Sensors...") {
+			input "sensors", "capability.relativeHumidityMeasurement", title: "Moisture Sensor", multiple: true, required: true
+		}
+		section("Event Notifications..."){
+			input "sendPush", "bool", title: "Send as Push?", required: false
+			input "sendSMS", "phone", title: "Send as SMS?", required: false
+        }
+        section("Watering Parameters...") {
+        	input "waterWhen", "number", title: "Water when % soil moisture goes below: ", required: true, range: "0..100"
+            input "useDarkSkyAPI" , "bool", title: "Use Dark Sky API to check for rain?", required: false, submitOnChange: true
+            def useDarkSkyAPI = settings.useDarkSkyAPI
+            if (useDarkSkyAPI) {
+            		input "darkSkyAPIKey", "text", title: "Enter your Dark Sky API Key: ", required: false, defaultValue: ""
+            		input "darkSkyPercent", "text", title: "Enter your % limit for rain prediction: ", required: false, range: "0..100", defaultValue: 50
+            		input "darkSkyTime", "number", title: "How many hours ahead for rain prediction: ", required: false, range: "1..12", defaultValue: 1
+               }
+            input "selectSwitch", title: "Which outlet(s) controls the water valve? ", "capability.switch", multiple: true, required: false
+            input "selectValve", title: "Which water valve(s)? ", "capability.valve", multiple: true, required: false
+            input "waterDuration", "number", title: "Watering duration in minutes?", required: false, range: "1..60", defaultValue: 10
+        }
+        
+// To be implemented
+//		section("Between The Hours...") {
+//			input "startTimeType", "enum", title: "Starting at", options: [["time": "A specific time"], ["sunrise": "Sunrise"], ["sunset": "Sunset"]], defaultValue: "time", submitOnChange: true
+//			if (startTimeType in ["sunrise","sunset"]) {
+//				input "startTimeOffset", "number", title: "Offset in minutes (+/-)", range: "*..*", required: false
+//			}
+//			else {
+//				input "starting", "time", title: "Start time", required: false
+//			}
+
+//			input "endTimeType", "enum", title: "Ending at", options: [["time": "A specific time"], ["sunrise": "Sunrise"], ["sunset": "Sunset"]], defaultValue: "time", submitOnChange: true
+//			if (endTimeType in ["sunrise","sunset"]) {
+//				input "endTimeOffset", "number", title: "Offset in minutes (+/-)", range: "*..*", required: false
+//			}
+//			else {
+//				input "ending", "time", title: "End time", required: false
+//			}
+//		}
+	}
+}
+
+def installed() {
+	log.debug "Installed with settings: ${settings}"
+	initialize()
+}
+
+def updated() {
+	log.debug "Updated with settings: ${settings}"
+	unsubscribe()
+	initialize()
+}
+
+def initialize() {
+	log.info "Water the garden installed/updated - ${textVersion()} ${textCopyright()}"
+    subscribe(sensors, "humidity", humidityHandler)
+    subscribe(sensors, "voltage", resistivityHandler)
+}
+
+def humidityHandler(evt) {
+	log.debug "Humidity Evt - Device: ${evt.device}, Name: ${evt.name}, Event Value ${evt.value}"
+    if (evt.name == "humidity") {
+        if (settings.selectSwitch) {
+        	sendWaterSwitch(evt)
+        }
+        if (settings.selectValve) {
+        	sendWaterValve(evt)
+        }
+    }
+}
+
+def resistivityHandler(evt) {
+	log.debug "Other Evt - Device: ${evt.device}, Name: ${evt.name}, Event Value ${evt.value}"
+    if(evt.name == "resistivity") {
+        log.debug "Resistivity percent is ${evt.value}"
+        def percent = 0.00
+        if(evt.value == 0) { 
+            return percent
+        }
+        else  {
+            percent = (3.1916 * evt.value ** -0.412)
+        }
+        if(percent < 0) { 
+            percent = 0
+        }
+        percent = percent * 100
+        log.debug "resistivity to percent: ${percent}"
+    }
+}
+def sendWaterSwitch(evt) {
+	log.debug "Checking whether to water or not"
+    def verb = ""
+	sendEvent(linkText:app.label, name:"sendWater", value:"Processing", descriptionText:"Processing", eventType:"SOLUTION_EVENT", displayed: true)
+    
+        try {
+            log.debug "PlantLink: ${evt.device}, Soil moisture: ${evt.value}%, water when: ${waterWhen}%"
+            if (evt.value.toInteger() <= waterWhen.toInteger()) {
+                if (settings.useDarkSkyAPI) {
+                    darkSkyCheck()
+                    } else {
+    				send("Watering Garden")
+                    turnOnSwitch()
+                }			
+            } else {
+            log.debug "Not watering"
+            }
+        }
+        catch (e) {
+            log.trace "Error checking status"
+            log.trace e
+        }
+}
+
+def sendWaterValve(evt) {
+	log.debug "Checking whether to water or not"
+    def verb = ""
+	sendEvent(linkText:app.label, name:"sendWater", value:"Processing", descriptionText:"Processing", eventType:"SOLUTION_EVENT", displayed: true)
+    
+        try {
+            log.debug "PlantLink: ${evt.device}, Soil moisture: ${evt.value}%, water when: ${waterWhen}%"
+            if (evt.value.toInteger() <= waterWhen.toInteger()) {
+                if (settings.useDarkSkyAPI) {
+                    darkSkyCheck()
+                    } else {
+                    turnOnValve()
+                }			
+            } else {
+            log.debug "Not watering"
+            }
+        }
+        catch (e) {
+            log.trace "Error checking status"
+            log.trace e
+        }
+}
+
+def darkSkyCheck() { 
+    def precipProb = 0
+    def greatestProb = 0
+    //dark skys api # only
+    httpGet("https://api.forecast.io/forecast/" + darkSkyAPIKey + "/$location.latitude,$location.longitude") {response -> 
+    if (response.data) {
+        0.upto(settings.darkSkyTime.toInteger()-1, {
+        	precipProb = response.data.hourly.data[it].precipProbability * 100
+            if (greatestProb < precipProb) {
+            	greatestProb = precipProb
+            }
+            log.debug "precipitation probability in ${it+1} hour(s): ${precipProb}%"
+	})
+    log.debug "Greatest precipitation probability: ${greatestProb}%, limit ${darkSkyPercent.toBigDecimal()}"
+    if (greatestProb < darkSkyPercent.toBigDecimal()) {
+        send("Less than ${greatestProb}% chance of rain in the next ${settings.darkSkyTime} hour(s). Watering Garden.")
+        turnOnSwitch()
+        }
+        else {
+        send("Greater than ${greatestProb}% chance of rain in the next ${settings.darkSkyTime} hour(s). Not watering Garden.")
+        }
+     } else {
+         log.debug "HttpGet Response data unsuccesful."
+     	}
+     } 
+}
+def turnOnSwitch() {
+    log.debug "Turning switch on for ${settings.waterDuration} minute(s)."
+	def switchAttr = selectSwitch.currentValue("switch") 
+    log.debug "turnOn: Switch state: ${switchAttr}"
+    selectSwitch.on()
+    send("Watering Garden")
+    unsubscribe()  // unsubscribe from future PlantLink events to not trigger another cycle if wait time is longer than event reporting time
+    runIn(60 * settings.waterDuration, turnOffSwitch)
+    sendEvent(linkText:app.label, name:"turnOn", value:"TurnOn", descriptionText:"TurnOn", eventType:"SOLUTION_EVENT", displayed: true)
+}
+
+def turnOffSwitch() {
+    log.debug "Turning off switch"
+   	selectSwitch.off()
+   	selectSwitch.off()  // just in case
+    send("Watering Garden Complete")
+    unschedule()
+    subscribe(sensors, "humidity", humidityHandler) // resubscribe to PlantLink humidity event
+    subscribe(sensors, "voltage", resistivityHandler) // resubscribe to PlantLink resistivity event
+	sendEvent(linkText:app.label, name:"turnOffSwitch-wasOn", value:"turnOffSwitch-wasOn", descriptionText:"turnOffSwitch-wasOn", eventType:"SOLUTION_EVENT", displayed: true)
+}
+
+def turnOnValve() {
+    log.debug "Turning valves on for ${settings.waterDuration} minute(s)."
+	def switchAttr = selectValve.currentValue("contact") 
+    log.debug "turnOn: Valve state: ${valveAttr}"
+    selectValve.on()
+    send("Watering Garden")
+    unsubscribe()  // unsubscribe from future PlantLink events to not trigger another cycle if wait time is longer than event reporting time
+    runIn(60 * settings.waterDuration, turnOffValve)
+    sendEvent(linkText:app.label, name:"turnOn", value:"TurnOn", descriptionText:"TurnOn", eventType:"SOLUTION_EVENT", displayed: true)
+}
+
+def turnOffValve() {
+    log.debug "Turning off valve"
+   	selectValve.off()
+   	selectValve.off()  // just in case
+    send("Watering Garden Complete")
+    unschedule()
+    subscribe(sensors, "humidity", humidityHandler) // resubscribe to PlantLink humidity event
+    subscribe(sensors, "voltage", resistivityHandler) // resubscribe to PlantLink resistivity event
+	sendEvent(linkText:app.label, name:"turnOffValve-wasOn", value:"turnOffValve-wasOn", descriptionText:"turnOffValve-wasOn", eventType:"SOLUTION_EVENT", displayed: true)
+}
+
+def send(msg) {
+    if (settings.sendPush == true) {
+        sendPush(msg)
+    }
+    if (settings.sendSMS != null) {
+        sendSms(phoneNumber, msg) 
+    }
+}
+
+private def textVersion() {
+    def text = "Version 0.1"
+}
+
+private def textCopyright() {
+    def text = "Copyright © 2016 jrb"
+}
