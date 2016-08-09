@@ -188,8 +188,13 @@ def darkSkyCheck() {
 	})
     log.debug "Dark Sky predicts precipitation probability: ${greatestProb}%, limit ${darkSkyPercent.toBigDecimal()}"
     if (greatestProb < darkSkyPercent.toBigDecimal()) {
-        send("Dark Sky predicts less than ${greatestProb}% chance of rain in the next ${settings.darkSkyTime} hour(s). Watering Garden")
-        turnOnSwitch()
+            send("Dark Sky predicts less than ${greatestProb}% chance of rain in the next ${settings.darkSkyTime} hour(s). Watering Garden")
+            if (settings.selectSwitch) {
+            	turnOnSwitch()
+            }
+            if (settings.selectValve) {
+                turnOnValve()
+            }
         }
         else {
         send("Dark Sky predicts greater than ${greatestProb}% chance of rain in the next ${settings.darkSkyTime} hour(s). Not Watering Garden.")
