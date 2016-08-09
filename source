@@ -4,7 +4,7 @@
  *  cycle is running for a period longer than the reporting period, new events are ignored until the first cycle is complete. If an event is intercepted (failsafe) and the
  *  command is to turn off the valve as moisture is above selected value, pending events are cancelled and the valve is turned off immediately.
  *
- *  Copyright 2016 jrb
+ *  Copyright © 2016 jrb
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  *  in compliance with the License. You may obtain a copy of the License at:
@@ -138,7 +138,7 @@ def sendWaterSwitch(evt) {
                 if (settings.useDarkSkyAPI) {
                     darkSkyCheck()
                     } else {
-    				send("Watering Garden, No Dark Sky Check")
+    				send("Watering Garden, Dark Sky Check Not Used")
                     turnOnSwitch()
                 }			
             } else {
@@ -160,7 +160,7 @@ def sendWaterValve(evt) {
                 if (settings.useDarkSkyAPI) {
                     darkSkyCheck()
                     } else {
-    				send("Watering Garden, No Dark Sky Check")
+    				send("Watering Garden, Dark Sky Check Not Used")
                     turnOnValve()
                 }			
             } else {
@@ -188,11 +188,11 @@ def darkSkyCheck() {
 	})
     log.debug "Dark Sky predicts precipitation probability: ${greatestProb}%, limit ${darkSkyPercent.toBigDecimal()}"
     if (greatestProb < darkSkyPercent.toBigDecimal()) {
-        send("Dark Sky predicts less than ${greatestProb}% chance of rain in the next ${settings.darkSkyTime} hour(s).")
+        send("Dark Sky predicts less than ${greatestProb}% chance of rain in the next ${settings.darkSkyTime} hour(s). Watering Garden")
         turnOnSwitch()
         }
         else {
-        send("Dark Sky predicts greater than ${greatestProb}% chance of rain in the next ${settings.darkSkyTime} hour(s). Not watering Garden.")
+        send("Dark Sky predicts greater than ${greatestProb}% chance of rain in the next ${settings.darkSkyTime} hour(s). Not Watering Garden.")
         }
      } else {
          log.debug "HttpGet Response data unsuccesful."
@@ -211,8 +211,7 @@ def turnOnSwitch() {
 def turnOffSwitch() {
     log.debug "Turning off switch"
    	selectSwitch.off()
-   	selectSwitch.off()  // just in case
-    send("Watering Garden Complete, Turning Off Switch(s)")
+    send("Water Cycle Complete, Turning Off Switch(s)")
     unschedule()
     subscribe(sensors, "humidity", humidityHandler) // resubscribe to PlantLink humidity event
 }
@@ -222,7 +221,6 @@ def turnOnValve() {
 	def valveAttr = selectValve.currentValue("contact") 
     log.debug "turnOn: Valve state: ${valveAttr}"
     selectValve.on()
-    send("Watering Garden Turning On Valve(s)")
     unsubscribe()  // unsubscribe from future PlantLink events to not trigger another cycle if wait time is longer than event reporting time
     runIn(60 * settings.waterDuration, turnOffValve)
 }
@@ -230,8 +228,7 @@ def turnOnValve() {
 def turnOffValve() {
     log.debug "Turning off valve"
    	selectValve.off()
-   	selectValve.off()  // just in case
-    send("Watering Garden Complete, Turning Off Valve(s)")
+    send("Water Cycle Complete, Turning Off Valve(s)")
     unschedule()
     subscribe(sensors, "humidity", humidityHandler) // resubscribe to PlantLink humidity event
 }
