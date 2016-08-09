@@ -27,9 +27,9 @@ definition(
     author: "jrbmobile",
     description: "Monitors any sensors that report humidity. The app turns on a switch or outlet to open a sprinkler valve. Checks the Dark Sky API if desired to see if rain is coming soon in case you wish to override.",
     category: "Green Living",
+    iconX3Url: "http://cdn.device-icons.smartthings.com/Outdoor/outdoor5-icn@3x.png",
     iconX2Url: "http://cdn.device-icons.smartthings.com/Outdoor/outdoor5-icn@2x.png",
     iconUrl: "http://cdn.device-icons.smartthings.com/Outdoor/outdoor5-icn.png")
-
 preferences {
     page name:"pageInfo"
 }
