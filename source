@@ -18,7 +18,8 @@
  *  Use at your own risk, this is a beta release, I am not responsible for flooding your garden, killing your plants from lack or water, or any other "act of God". Please see
  *  https://en.wikipedia.org/wiki/Act_of_God
  *
- *	Version: 0.2 - Initial Version
+ *	Version: 0.1 - Initial Check-in
+ *	Version: 0.2 - Bug fixes, removed sendEvent, fixed SMS messages, updated messages
  */
 definition(
     name: "Water The Garden",
