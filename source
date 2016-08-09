@@ -18,7 +18,7 @@
  *  Use at your own risk, this is a beta release, I am not responsible for flooding your garden, killing your plants from lack or water, or any other "act of God". Please see
  *  https://en.wikipedia.org/wiki/Act_of_God
  *
- *	Version: 0.1 - Initial Version
+ *	Version: 0.2 - Initial Version
  */
 definition(
     name: "Water The Garden",
@@ -43,7 +43,7 @@ def pageInfo() {
 		}
 		section("Event Notifications..."){
 			input "sendPush", "bool", title: "Send as Push?", required: false
-			input "sendSMS", "phone", title: "Send as SMS?", required: false
+			input "phoneNumber", "phoneNumber", title: "Send as SMS?", required: false
         }
         section("Watering Parameters...") {
         	input "waterWhen", "number", title: "Water when % soil moisture goes below: ", required: true, range: "0..100"
@@ -60,23 +60,23 @@ def pageInfo() {
         }
         
 // To be implemented
-//		section("Between The Hours...") {
-//			input "startTimeType", "enum", title: "Starting at", options: [["time": "A specific time"], ["sunrise": "Sunrise"], ["sunset": "Sunset"]], defaultValue: "time", submitOnChange: true
-//			if (startTimeType in ["sunrise","sunset"]) {
-//				input "startTimeOffset", "number", title: "Offset in minutes (+/-)", range: "*..*", required: false
-//			}
-//			else {
-//				input "starting", "time", title: "Start time", required: false
-//			}
+		section("Between The Hours...") {
+			input "startTimeType", "enum", title: "Starting at", options: [["time": "A specific time"], ["sunrise": "Sunrise"], ["sunset": "Sunset"]], defaultValue: "time", submitOnChange: true
+			if (startTimeType in ["sunrise","sunset"]) {
+				input "startTimeOffset", "number", title: "Offset in minutes (+/-)", range: "*..*", required: false
+			}
+			else {
+				input "starting", "time", title: "Start time", required: false
+			}
 
-//			input "endTimeType", "enum", title: "Ending at", options: [["time": "A specific time"], ["sunrise": "Sunrise"], ["sunset": "Sunset"]], defaultValue: "time", submitOnChange: true
-//			if (endTimeType in ["sunrise","sunset"]) {
-//				input "endTimeOffset", "number", title: "Offset in minutes (+/-)", range: "*..*", required: false
-//			}
-//			else {
-//				input "ending", "time", title: "End time", required: false
-//			}
-//		}
+			input "endTimeType", "enum", title: "Ending at", options: [["time": "A specific time"], ["sunrise": "Sunrise"], ["sunset": "Sunset"]], defaultValue: "time", submitOnChange: true
+			if (endTimeType in ["sunrise","sunset"]) {
+				input "endTimeOffset", "number", title: "Offset in minutes (+/-)", range: "*..*", required: false
+			}
+			else {
+				input "ending", "time", title: "End time", required: false
+			}
+		}
 	}
 }
 
@@ -94,7 +94,6 @@ def updated() {
 def initialize() {
 	log.info "Water the garden installed/updated - ${textVersion()} ${textCopyright()}"
     subscribe(sensors, "humidity", humidityHandler)
-    subscribe(sensors, "voltage", resistivityHandler)
 }
 
 def humidityHandler(evt) {
@@ -125,12 +124,12 @@ def resistivityHandler(evt) {
         }
         percent = percent * 100
         log.debug "resistivity to percent: ${percent}"
+        send("Resistivity ${evt.value} To Percent: ${percent}")
     }
 }
 def sendWaterSwitch(evt) {
 	log.debug "Checking whether to water or not"
     def verb = ""
-	sendEvent(linkText:app.label, name:"sendWater", value:"Processing", descriptionText:"Processing", eventType:"SOLUTION_EVENT", displayed: true)
     
         try {
             log.debug "PlantLink: ${evt.device}, Soil moisture: ${evt.value}%, water when: ${waterWhen}%"
@@ -138,7 +137,7 @@ def sendWaterSwitch(evt) {
                 if (settings.useDarkSkyAPI) {
                     darkSkyCheck()
                     } else {
-    				send("Watering Garden")
+    				send("Watering Garden, No Dark Sky Check")
                     turnOnSwitch()
                 }			
             } else {
@@ -153,16 +152,14 @@ def sendWaterSwitch(evt) {
 
 def sendWaterValve(evt) {
 	log.debug "Checking whether to water or not"
-    def verb = ""
-	sendEvent(linkText:app.label, name:"sendWater", value:"Processing", descriptionText:"Processing", eventType:"SOLUTION_EVENT", displayed: true)
-    
+    def verb = ""    
         try {
             log.debug "PlantLink: ${evt.device}, Soil moisture: ${evt.value}%, water when: ${waterWhen}%"
             if (evt.value.toInteger() <= waterWhen.toInteger()) {
                 if (settings.useDarkSkyAPI) {
                     darkSkyCheck()
                     } else {
-    				send("Watering Garden")
+    				send("Watering Garden, No Dark Sky Check")
                     turnOnValve()
                 }			
             } else {
@@ -206,10 +203,8 @@ def turnOnSwitch() {
 	def switchAttr = selectSwitch.currentValue("switch") 
     log.debug "turnOn: Switch state: ${switchAttr}"
     selectSwitch.on()
-    send("Watering Garden Turning On Switch(s)")
     unsubscribe()  // unsubscribe from future PlantLink events to not trigger another cycle if wait time is longer than event reporting time
     runIn(60 * settings.waterDuration, turnOffSwitch)
-    sendEvent(linkText:app.label, name:"turnOn", value:"TurnOn", descriptionText:"TurnOn", eventType:"SOLUTION_EVENT", displayed: true)
 }
 
 def turnOffSwitch() {
@@ -219,19 +214,16 @@ def turnOffSwitch() {
     send("Watering Garden Complete, Turning Off Switch(s)")
     unschedule()
     subscribe(sensors, "humidity", humidityHandler) // resubscribe to PlantLink humidity event
-    subscribe(sensors, "voltage", resistivityHandler) // resubscribe to PlantLink resistivity event
-	sendEvent(linkText:app.label, name:"turnOffSwitch-wasOn", value:"turnOffSwitch-wasOn", descriptionText:"turnOffSwitch-wasOn", eventType:"SOLUTION_EVENT", displayed: true)
 }
 
 def turnOnValve() {
     log.debug "Turning valves on for ${settings.waterDuration} minute(s)."
-	def switchAttr = selectValve.currentValue("contact") 
+	def valveAttr = selectValve.currentValue("contact") 
     log.debug "turnOn: Valve state: ${valveAttr}"
     selectValve.on()
     send("Watering Garden Turning On Valve(s)")
     unsubscribe()  // unsubscribe from future PlantLink events to not trigger another cycle if wait time is longer than event reporting time
     runIn(60 * settings.waterDuration, turnOffValve)
-    sendEvent(linkText:app.label, name:"turnOn", value:"TurnOn", descriptionText:"TurnOn", eventType:"SOLUTION_EVENT", displayed: true)
 }
 
 def turnOffValve() {
@@ -241,15 +233,13 @@ def turnOffValve() {
     send("Watering Garden Complete, Turning Off Valve(s)")
     unschedule()
     subscribe(sensors, "humidity", humidityHandler) // resubscribe to PlantLink humidity event
-    subscribe(sensors, "voltage", resistivityHandler) // resubscribe to PlantLink resistivity event
-	sendEvent(linkText:app.label, name:"turnOffValve-wasOn", value:"turnOffValve-wasOn", descriptionText:"turnOffValve-wasOn", eventType:"SOLUTION_EVENT", displayed: true)
 }
 
 def send(msg) {
-    if (settings.sendPush == true) {
+    if (sendPush) {
         sendPush(msg)
     }
-    if (settings.sendSMS != null) {
+    if (phoneNumber) {
         sendSms(phoneNumber, msg) 
     }
 }
