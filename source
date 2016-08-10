@@ -99,11 +99,16 @@ def initialize() {
 def humidityHandler(evt) {
 	log.debug "Humidity Evt - Device: ${evt.device}, Name: ${evt.name}, Event Value ${evt.value}"
     if (evt.name == "humidity") {
-        if (settings.selectSwitch) {
-        	sendWaterSwitch(evt)
-        }
-        if (settings.selectValve) {
-        	sendWaterValve(evt)
+    	if (useDarkSkyAPI) {
+        	darkSkyCheck()
+            }
+            else {
+            if (settings.selectSwitch) {
+                sendWaterSwitch(evt)
+            }
+            if (settings.selectValve) {
+                sendWaterValve(evt)
+        	}
         }
     }
 }
@@ -137,7 +142,7 @@ def sendWaterSwitch(evt) {
                 if (settings.useDarkSkyAPI) {
                     darkSkyCheck()
                     } else {
-    				send("Watering Garden, Dark Sky Check Not Used")
+    				send("Watering Garden, Turning On ${selectSwitch}")
                     turnOnSwitch()
                 }			
             } else {
@@ -159,7 +164,7 @@ def sendWaterValve(evt) {
                 if (settings.useDarkSkyAPI) {
                     darkSkyCheck()
                     } else {
-    				send("Watering Garden, Dark Sky Check Not Used")
+    				send("Watering Garden, Turning On ${selectValve}")
                     turnOnValve()
                 }			
             } else {
@@ -187,16 +192,18 @@ def darkSkyCheck() {
 	})
     log.debug "Dark Sky predicts precipitation probability: ${greatestProb}%, limit ${darkSkyPercent.toBigDecimal()}"
     if (greatestProb < darkSkyPercent.toBigDecimal()) {
-            send("Dark Sky predicts less than ${greatestProb}% chance of rain in the next ${settings.darkSkyTime} hour(s). Watering Garden")
+            send("Dark Sky predicts less than ${greatestProb}% chance of rain in the next ${settings.darkSkyTime} hour(s).")
             if (settings.selectSwitch) {
+            	send("Watering Garden, Turning On ${selectSwitch}")
             	turnOnSwitch()
             }
             if (settings.selectValve) {
+            	send("Watering Garden, Turning On ${selectValve}")
                 turnOnValve()
             }
         }
         else {
-        send("Dark Sky predicts greater than ${greatestProb}% chance of rain in the next ${settings.darkSkyTime} hour(s). Not Watering Garden.")
+        send("Dark Sky predicts greater than ${greatestProb}% chance of rain in the next ${settings.darkSkyTime} hour(s).")
         }
      } else {
          log.debug "HttpGet Response data unsuccesful."
@@ -215,7 +222,7 @@ def turnOnSwitch() {
 def turnOffSwitch() {
     log.debug "Turning off switch"
    	selectSwitch.off()
-    send("Water Cycle Complete, Turning Off Switch(s)")
+    send("Water Cycle Complete, Turning Off ${selectSwitch}")
     unschedule()
     subscribe(sensors, "humidity", humidityHandler) // resubscribe to PlantLink humidity event
 }
@@ -232,7 +239,7 @@ def turnOnValve() {
 def turnOffValve() {
     log.debug "Turning off valve"
    	selectValve.off()
-    send("Water Cycle Complete, Turning Off Valve(s)")
+    send("Water Cycle Complete, Turning Off ${selectValve}")
     unschedule()
     subscribe(sensors, "humidity", humidityHandler) // resubscribe to PlantLink humidity event
 }
