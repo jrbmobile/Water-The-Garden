@@ -19,8 +19,9 @@
  *
  *	Version: 0.1 - Initial Check-in
  *	Version: 0.2 - Bug fixes, removed sendEvent, fixed SMS messages, updated messages
- *      Version: 0.3 - Fixed logic error where garden could be watered below desired threshold
- */
+ *  	Version: 0.3 - Fixed logic error where garden could be watered below desired threshold
+ *  	Version: 0.4 - Created override to water the garden based on rain intensity from Dark Sky API - if rain predicted = very light but over rain threshold then water anyway
+*/
 definition(
     name: "Water The Garden",
     namespace: "jrb",
@@ -48,6 +49,7 @@ def pageInfo() {
         }
         section("Watering Parameters...") {
         	input "waterWhen", "number", title: "Water when % soil moisture goes below: ", required: true, range: "0..100"
+            input(name: "rainIntensity", type: "enum", title: "Allow watering during: ", options: ["never override","very light rain","light rain","moderate rain","heavy rain"])
             input "useDarkSkyAPI" , "bool", title: "Use Dark Sky API to check for rain?", required: false, submitOnChange: true
             def useDarkSkyAPI = settings.useDarkSkyAPI
             if (useDarkSkyAPI) {
@@ -60,34 +62,25 @@ def pageInfo() {
             input "waterDuration", "number", title: "Watering duration in minutes?", required: false, range: "1..60", defaultValue: 10
         }
         
-// To be implemented
-		section("Between The Hours...") {
-			input "startTimeType", "enum", title: "Starting at", options: [["time": "A specific time"], ["sunrise": "Sunrise"], ["sunset": "Sunset"]], defaultValue: "time", submitOnChange: true
-			if (startTimeType in ["sunrise","sunset"]) {
-				input "startTimeOffset", "number", title: "Offset in minutes (+/-)", range: "*..*", required: false
-			}
-			else {
-				input "starting", "time", title: "Start time", required: false
-			}
-
-			input "endTimeType", "enum", title: "Ending at", options: [["time": "A specific time"], ["sunrise": "Sunrise"], ["sunset": "Sunset"]], defaultValue: "time", submitOnChange: true
-			if (endTimeType in ["sunrise","sunset"]) {
-				input "endTimeOffset", "number", title: "Offset in minutes (+/-)", range: "*..*", required: false
-			}
-			else {
-				input "ending", "time", title: "End time", required: false
-			}
-		}
+// To be implemented - maybe, doesn't make sense for drip irrigation
+//        section("Between The Hours...") {
+//            input "betweenHours" , "bool", title: "Between The Hours?", required: false, submitOnChange: true
+//            if (betweenHours) {
+//                    input "starting", "time", title: "Start time", required: false
+//                    input "ending", "time", title: "End time", required: false
+//            }
+//        }
 	}
 }
-
 def installed() {
 	log.debug "Installed with settings: ${settings}"
+    log.debug "rain enum: ${rainIntensity}"
 	initialize()
 }
 
 def updated() {
 	log.debug "Updated with settings: ${settings}"
+    log.debug "rain enum: ${rainIntensity}"
 	unsubscribe()
 	initialize()
 }
@@ -100,17 +93,39 @@ def initialize() {
 def humidityHandler(evt) {
 	log.debug "Humidity Evt - Device: ${evt.device}, Name: ${evt.name}, Event Value ${evt.value}"
     if (evt.name == "humidity") {
-    	if (useDarkSkyAPI) {
-        	darkSkyCheck(evt)
+    	if (betweenHours) {
+            def between = timeOfDayIsBetween(timeToday(starting, location.timeZone), timeToday(ending, location.timeZone), new Date(), location.timeZone)
+            log.debug ("between: ${between}")
+            if (between) {
+                if (between) {
+                    if (useDarkSkyAPI) {
+                        darkSkyCheck(evt)
+                    }
+                    else {
+                        if (settings.selectSwitch) {
+                            sendWaterSwitch(evt)
+                        }
+                        if (settings.selectValve) {
+                            sendWaterValve(evt)
+                        }
+                    }
+                }
             }
-            else {
-            if (settings.selectSwitch) {
-                sendWaterSwitch(evt)
-            }
-            if (settings.selectValve) {
-                sendWaterValve(evt)
-        	}
         }
+        else {
+           if (useDarkSkyAPI) {
+                darkSkyCheck(evt)
+           }
+           else {
+              if (settings.selectSwitch) {
+                  sendWaterSwitch(evt)
+              }
+              if (settings.selectValve) {
+                   sendWaterValve(evt)
+              }
+           }
+        }
+
     }
 }
 
@@ -178,6 +193,9 @@ def sendWaterValve(evt) {
 def darkSkyCheck(evt) { 
     def precipProb = 0
     def greatestProb = 0
+    def intensity = 0.0
+    def iDescript = ""
+    def aOverride = 0
     //dark skys api # only
     //log.debug (humidity - ${evt.value})
     if (evt.value.toInteger() <= waterWhen.toInteger()) {
@@ -187,12 +205,50 @@ def darkSkyCheck(evt) {
                 precipProb = response.data.hourly.data[it].precipProbability * 100
                 if (greatestProb < precipProb) {
                     greatestProb = precipProb
+                    intensity = response.data.hourly.data[it].precipIntensity
                 }
-                log.debug "precipitation probability in ${it+1} hour(s): ${precipProb}%"
+                log.debug "precipitation probability in ${it+1} hour(s): ${precipProb}%, intensity: ${intensity}"
         })
+        def iOverride = -99
+        switch(rainIntensity) {
+            case "never override":
+                iOveride = -1
+            case "very light rain":
+                iOverride = 1
+            case "light rain":
+                iOverride = 2
+            case "moderate rain":
+                iOverride = 3
+            case "heavy rain":
+                iOverride = 4
+//            default: 
+//                iOverride = -1
+        }
+
+		if ( intensity == 0.0 ) {
+                iDescript = "rain"
+                aOverride = 0
+        	}
+        if ( intensity > 0.0 && intensity < 0.002 ) {
+                iDescript = "very light rain"
+                aOverride = 1
+        	}
+        if ( intensity >= 0.002 && intensity < 0.017 ) {
+                iDescript = "light rain"
+                aOverride = 2
+        	}
+        if ( intensity >= 0.017 && intensity < 0.1 ) {
+                iDescript = "moderate rain"
+                aOverride - 3
+        	}
+        if ( intensity >= 0.1 && intensity < 10.0 ) {
+                iDescript = "heavy rain"
+                aOverride = 4
+        	}
         log.debug "Dark Sky predicts precipitation probability: ${greatestProb}%, limit ${darkSkyPercent.toBigDecimal()}"
-        if (greatestProb < darkSkyPercent.toBigDecimal()) {
-                send("Dark Sky predicts ${greatestProb}% chance of rain in the next ${settings.darkSkyTime} hour(s).")
+        log.debug "override values: ${iOverride}, ${aOverride}"
+        if (greatestProb < darkSkyPercent.toBigDecimal() || iOverride >= aOverride) {
+                send("Dark Sky predicts ${greatestProb}% chance of ${iDescript} in the next ${settings.darkSkyTime} hour(s).")
                 if (settings.selectSwitch) {
                     send("Watering Garden, Turning On ${selectSwitch}")
                     turnOnSwitch()
@@ -203,7 +259,7 @@ def darkSkyCheck(evt) {
                 }
             }
             else {
-            send("Dark Sky predicts ${greatestProb}% chance of rain in the next ${settings.darkSkyTime} hour(s). Not Watering")
+            send("Dark Sky predicts ${greatestProb}% chance of ${iDescript} in the next ${settings.darkSkyTime} hour(s). Not Watering")
             }
          } else {
              log.debug "HttpGet Response data unsuccesful."
@@ -214,7 +270,7 @@ def darkSkyCheck(evt) {
 def turnOnSwitch() {
     log.debug "Turning switch on for ${settings.waterDuration} minute(s)."
 	def switchAttr = selectSwitch.currentValue("switch") 
-    log.debug "turnOn: Switch state: ${switchAttr}"
+    //log.debug "turnOn: Switch state: ${switchAttr}"
     selectSwitch.on()
     unsubscribe()  // unsubscribe from future PlantLink events to not trigger another cycle if wait time is longer than event reporting time
     runIn(60 * settings.waterDuration, turnOffSwitch)
@@ -231,7 +287,7 @@ def turnOffSwitch() {
 def turnOnValve() {
     log.debug "Turning valves on for ${settings.waterDuration} minute(s)."
 	def valveAttr = selectValve.currentValue("contact") 
-    log.debug "turnOn: Valve state: ${valveAttr}"
+    //log.debug "turnOn: Valve state: ${valveAttr}"
     selectValve.on()
     unsubscribe()  // unsubscribe from future PlantLink events to not trigger another cycle if wait time is longer than event reporting time
     runIn(60 * settings.waterDuration, turnOffValve)
