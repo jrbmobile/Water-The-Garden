@@ -93,7 +93,10 @@ def initialize() {
 
 def humidityHandler(evt) {
 	log.debug "Humidity Evt - Device: ${evt.device}, Name: ${evt.name}, Event Value ${evt.value}"
-    if (evt.name == "humidity") {
+    
+// TODO: get the device status to see if it's active, don't process if not connected, i.e. Status: INACTIVE
+
+	if (evt.name == "humidity") {
     	if (betweenHours) {
             def between = timeOfDayIsBetween(timeToday(starting, location.timeZone), timeToday(ending, location.timeZone), new Date(), location.timeZone)
             log.debug ("between: ${between}")
