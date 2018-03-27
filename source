@@ -3,7 +3,7 @@
  *  to check if rain is coming and will override the watering cycle if desired. Executes on sensor events, which PlantLink reports every 15 minutes. If a watering
  *  cycle is running for a period longer than the reporting period, new events are ignored until the first cycle is complete. 
  *
- *  Copyright © 2016 jrb
+ *  Copyright © 2016-2018 jrb
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  *  in compliance with the License. You may obtain a copy of the License at:
@@ -14,13 +14,14 @@
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
  * 
- *  Use at your own risk, this is a beta release, I am not responsible for flooding your garden, killing your plants from lack or water, or any other "act of God". Please see
+ *  Use at your own risk, this is a beta release, I am not responsible for flooding your garden, killing your plants from lack or water, or any other "act of God". Please visit
  *  https://en.wikipedia.org/wiki/Act_of_God
  *
- *	Version: 0.1 - Initial Check-in
- *	Version: 0.2 - Bug fixes, removed sendEvent, fixed SMS messages, updated messages
- *  	Version: 0.3 - Fixed logic error where garden could be watered below desired threshold
- *  	Version: 0.4 - Created override to water the garden based on rain intensity from Dark Sky API - if rain predicted = very light but over rain threshold then water anyway
+ *  Version: 0.1 - Initial Check-in
+ *  Version: 0.2 - Bug fixes, removed sendEvent, fixed SMS messages, updated messages
+ *  Version: 0.3 - Fixed logic error where garden could be watered below desired threshold
+ *  Version: 0.4 - Created override to water the garden based on rain intensity from Dark Sky API - if rain predicted = very light but over rain threshold then water anyway
+ *  Version: 0.5 - Added "Between The Hours...", Fixed override logic if not using Dark Sky API
 */
 definition(
     name: "Water The Garden",
@@ -49,27 +50,27 @@ def pageInfo() {
         }
         section("Watering Parameters...") {
         	input "waterWhen", "number", title: "Water when % soil moisture goes below: ", required: true, range: "0..100"
-            input(name: "rainIntensity", type: "enum", title: "Allow watering during: ", options: ["never override","very light rain","light rain","moderate rain","heavy rain"])
             input "useDarkSkyAPI" , "bool", title: "Use Dark Sky API to check for rain?", required: false, submitOnChange: true
             def useDarkSkyAPI = settings.useDarkSkyAPI
             if (useDarkSkyAPI) {
             		input "darkSkyAPIKey", "text", title: "Enter your Dark Sky API Key: ", required: false, defaultValue: ""
             		input "darkSkyPercent", "text", title: "Enter your % limit for rain prediction: ", required: false, range: "0..100", defaultValue: 50
             		input "darkSkyTime", "number", title: "How many hours ahead for rain prediction: ", required: false, range: "1..12", defaultValue: 1
+            		input(name: "rainIntensity", type: "enum", title: "Allow watering during: ", options: ["never override","very light rain","light rain","moderate rain","heavy rain"])
                }
             input "selectSwitch", title: "Which outlet(s) controls the water valve? ", "capability.switch", multiple: true, required: false
             input "selectValve", title: "Which water valve(s)? ", "capability.valve", multiple: true, required: false
             input "waterDuration", "number", title: "Watering duration in minutes?", required: false, range: "1..60", defaultValue: 10
         }
         
-// To be implemented - maybe, doesn't make sense for drip irrigation
-//        section("Between The Hours...") {
-//            input "betweenHours" , "bool", title: "Between The Hours?", required: false, submitOnChange: true
-//            if (betweenHours) {
-//                    input "starting", "time", title: "Start time", required: false
-//                    input "ending", "time", title: "End time", required: false
-//            }
-//        }
+// Between hours, maybe. Doesn't make sense for drip irrigation
+        section("Between The Hours...") {
+            input "betweenHours" , "bool", title: "Between The Hours?", required: false, submitOnChange: true
+            if (betweenHours) {
+                    input "starting", "time", title: "Start time", required: true
+                    input "ending", "time", title: "End time", required: true
+            }
+        }
 	}
 }
 def installed() {
